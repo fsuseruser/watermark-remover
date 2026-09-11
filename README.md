@@ -79,21 +79,33 @@ This app is heavier than a typical Streamlit demo — it bundles PyTorch and
 loads a real neural network into memory — so the host you pick matters more
 than usual.
 
-**Recommended: Hugging Face Spaces.** It's built for exactly this kind of
-ML app, the free CPU tier (2 vCPU / 16GB RAM) comfortably fits PyTorch +
-LaMa, and it reads this repo's `requirements.txt` and `packages.txt`
-automatically. Steps:
-1. Create a Space, SDK = Streamlit.
-2. Push these files (`app.py`, `requirements.txt`, `packages.txt`,
-   `.streamlit/config.toml`) to the Space's repo.
+**Hugging Face Spaces no longer has a free option for this.** As of 2026,
+Spaces only offers free hosting for *Static* sites (no Python). Running
+actual code (Gradio or Docker, which is how Streamlit apps deploy there
+now) requires a paid PRO plan ($9/month). If you already pay for PRO, it's
+a great fit — 16GB RAM comfortably handles PyTorch + LaMa, and it reads
+this repo's `requirements.txt` and `packages.txt` automatically. Steps:
+1. Create a Space, SDK = Docker (or Gradio).
+2. Push these files (`app.py`, `lama_inpaint.py`, `requirements.txt`,
+   `packages.txt`, `.streamlit/config.toml`) to the Space's repo.
 3. It builds and serves automatically at `<your-space>.hf.space`.
 
-**Streamlit Community Cloud works too**, but its free tier is memory-tighter
-(historically around 1GB) — PyTorch plus a few in-flight images can get
-close to that ceiling, especially if more than one person uses it at once.
-Fine for light personal use; watch for out-of-memory restarts under real
-traffic. Same repo, no changes needed — it also reads `packages.txt` and
-`runtime.txt`.
+**Streamlit Community Cloud is the actual free option.** Its free tier is
+memory-tight (roughly 1GB) — PyTorch plus a few in-flight images can get
+close to that ceiling, especially with more than one concurrent user — but
+it costs nothing. Steps:
+1. Push this repo to GitHub.
+2. Go to share.streamlit.io, sign in with GitHub, click **New app**, and
+   point it at your repo and `app.py`.
+3. It reads `requirements.txt` and `packages.txt` automatically.
+
+Community Cloud has a known, currently-unresolved bug where it silently
+ignores any Python-version pin (a `runtime.txt` file or the "Advanced
+settings" dropdown) and just uses whatever version it feels like — which
+has been as new as 3.14 for some deployments. That's exactly why this repo
+vendors its own copy of the LaMa code instead of depending on a PyPI
+package with old pinned versions (see below) — it means the app doesn't
+care which Python version you end up running on.
 
 **A plain VM/container (Fly.io, Render, Railway, your own server)** gives
 you the most headroom and is worth it if you expect real usage — pick at
@@ -108,12 +120,21 @@ least 2GB RAM.
   needs to even *import* on minimal Debian-based images. Without this the
   app crashes on startup with a `libGL.so.1: cannot open shared object
   file` error — an easy one to lose an hour to.
-- `runtime.txt` — pins Python 3.11 for platforms that read it (Streamlit
-  Community Cloud). Very new Python versions sometimes don't have
-  prebuilt wheels yet for older pinned dependencies, forcing a slow
-  from-source build that can fail outright.
 - `.streamlit/config.toml` — caps uploads at 20MB/file (raise if your
   photos are bigger) and sets `headless = true` for server environments.
+- `lama_inpaint.py` — a vendored copy of the LaMa inference class (see
+  below) instead of installing `simple-lama-inpainting` from PyPI.
+
+**Why vendor instead of `pip install simple-lama-inpainting`:** that
+package declares dependencies on old pinned versions of Pillow/numpy it
+doesn't actually need at runtime (only its unused CLI wrapper needs them).
+On a host that ends up running a newer Python than those old pins have
+prebuilt wheels for, pip falls back to building Pillow from source — which
+fails outright on modern setuptools. This bit us directly on Streamlit
+Community Cloud. Vendoring the ~150 lines of actual inference code
+sidesteps the problem entirely: the app runs on whatever modern
+Pillow/numpy/opencv the host already has, regardless of Python version.
+
 
 ### Things worth knowing before you get real traffic
 - **Cold starts re-download the model** on platforms with ephemeral
